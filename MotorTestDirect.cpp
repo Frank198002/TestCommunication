@@ -193,6 +193,40 @@ unsigned char Read_EEPROM[] =
     0x00          // checkSum [7]
 };
 
+unsigned char MowerOn_command[]  = {0x3b, 0x4f, 0x5d, 0x6e, 0x03, 0x03, 0x01, 0x00};  // [7]=checkSum
+unsigned char MowerOff_command[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x03, 0x03, 0x00, 0x00};  // [7]=checkSum
+
+// sleep_command 帧格式（共 120 字节）：
+// [0-6]  : 固定帧头  3B 4F 5D 6E 73 00 0F
+// [7-118]: 28组 UTC 时间戳，每组4字节，小端序（低字节在前）
+//          第i组 [7+i*4] ~ [7+i*4+3] = timer & 0xFF, (timer>>8)&0xFF, (timer>>16)&0xFF, (timer>>24)&0xFF
+// [119]  : checkSum（前119字节累加之和的低8位）
+//
+// 时间戳由 config.ini [sleep_timestamps] 节的 ts_00 ~ ts_27 在运行时填充，
+// 数组初始值仅保留帧头，其余字节全部清零。
+unsigned char sleep_command[120] =
+{
+    // [0-6] 固定帧头
+    0x3b, 0x4f, 0x5d, 0x6e, 0x73, 0x00, 0x0F,
+    // [7-118] 28组 UTC 时间戳（运行时从 config.ini 读取后填入）
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组0  组1
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组2  组3
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组4  组5
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组6  组7
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组8  组9
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组10 组11
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组12 组13
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组14 组15
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组16 组17
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组18 组19
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组20 组21
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组22 组23
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组24 组25
+    0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,  // 组26 组27
+    // [119] checkSum（运行时计算填写）
+    0x00
+};
+
 
 int g_leftVelocity  = 0;
 int g_rightVelocity = 0;
@@ -259,8 +293,8 @@ void send_loop() {
     int rightVelocity_ = 0;
 
     // [system] 系统参数：启动时读一次，运行期间不变
-    const int sendInterval = g_cfg.getInt("system", "send_interval_us", 500000);
-    printf("[INFO] send_interval_us = %d us\n", sendInterval);
+    // const int sendInterval = g_cfg.getInt("system", "send_interval_us", 500000);
+    // printf("[INFO] send_interval_us = %d us\n", sendInterval);
 
     while (running) {
 
@@ -271,6 +305,8 @@ void send_loop() {
         // -------------------------------------------------------
         g_cfg.load("config.ini");
 
+        const int sendInterval = g_cfg.getInt("system", "send_interval_us", 500000);  // 每周期实时生效
+
         // [motor]
         g_leftVelocity  = g_cfg.getInt("motor", "left_velocity",  0);
         g_rightVelocity = g_cfg.getInt("motor", "right_velocity", 0);
@@ -280,15 +316,17 @@ void send_loop() {
         const int cut_height_query = g_cfg.getInt("commands", "cut_height_query", PARAM_DISABLED);
         const int alarm_off        = g_cfg.getInt("commands", "alarm_off",        PARAM_DISABLED);
         const int read_eeprom      = g_cfg.getInt("commands", "read_eeprom",      PARAM_DISABLED);
+        const int mower_on         = g_cfg.getInt("commands", "mower_on",         PARAM_DISABLED);
+        const int mower_off        = g_cfg.getInt("commands", "mower_off",        PARAM_DISABLED);
 
         // [thresholds] — 带值型，int: 65535=不发送, 0~65534=发送
         const int RainTHHigh    = (int)g_cfg.getFloat("thresholds", "RainTHHigh",    (float)PARAM_DISABLED);
         const int TiltAngTH     = (int)g_cfg.getFloat("thresholds", "TiltAngTH",     (float)PARAM_DISABLED);
         const int CollisionCoef = (int)g_cfg.getFloat("thresholds", "CollisionCoef", (float)PARAM_DISABLED);
 
-        // [voltage] — 带值型，float: 65535=不发送, 0~65534=发送
-        const float ReChargeV = g_cfg.getFloat("voltage", "ReChargeV", (float)PARAM_DISABLED);
-        const float FullV     = g_cfg.getFloat("voltage", "FullV",     (float)PARAM_DISABLED);
+        // [voltage] — 带值型，int: 65535=不发送, 0~65534=发送
+        const int ReChargeV = g_cfg.getInt("voltage", "ReChargeV", PARAM_DISABLED);
+        const int FullV     = g_cfg.getInt("voltage", "FullV",     PARAM_DISABLED);
 
         // [version] — 带值型，int (hex): 65535=不发送, 其他值=发送
         const int          Hardware_VER_raw = g_cfg.getInt("version", "Hardware_VER", PARAM_DISABLED);
@@ -298,9 +336,14 @@ void send_loop() {
         const int doSetTH      = (RainTHHigh    != PARAM_DISABLED ||
                                    TiltAngTH     != PARAM_DISABLED ||
                                    CollisionCoef != PARAM_DISABLED) ? 1 : 0;
-        const int doSetVoltage = ((int)ReChargeV != PARAM_DISABLED ||
-                                   (int)FullV     != PARAM_DISABLED) ? 1 : 0;
+        const int doSetVoltage = (ReChargeV != PARAM_DISABLED || FullV != PARAM_DISABLED) ? 1 : 0;
+
         const int doSetHdVer   = (Hardware_VER_raw != PARAM_DISABLED) ? 1 : 0;
+
+        // [sleep] — 纯命令型，int: 65535=不发送, 其他值=发送
+        const int send_sleep_command = g_cfg.getInt("commands", "sleep_command", PARAM_DISABLED);
+
+        
 
         // 打印本轮参数摘要
         printf("\n========== CONFIG (this cycle) ==========\n");
@@ -309,7 +352,7 @@ void send_loop() {
                pin_code_query, cut_height_query, alarm_off, read_eeprom);
         printf("  [thresholds]  RainTHHigh=%d  TiltAngTH=%d  CollisionCoef=%d  -> send=%d\n",
                RainTHHigh, TiltAngTH, CollisionCoef, doSetTH);
-        printf("  [voltage]  ReChargeV=%.2f  FullV=%.2f  -> send=%d\n",
+        printf("  [voltage]  ReChargeV=%d  FullV=%d  -> send=%d\n",
                ReChargeV, FullV, doSetVoltage);
         printf("  [version]  Hardware_VER=0x%08X  -> send=%d\n", Hardware_VER, doSetHdVer);
         printf("=========================================\n\n");
@@ -397,8 +440,8 @@ void send_loop() {
          * Set_recharge_voltage  — ReChargeV 或 FullV != 65535
          ********************************************************/
         if (doSetVoltage) {
-            int rcv = ((int)ReChargeV != PARAM_DISABLED) ? (int)ReChargeV : 0;
-            int fv  = ((int)FullV     != PARAM_DISABLED) ? (int)FullV     : 0;
+            int rcv = (ReChargeV != PARAM_DISABLED) ? ReChargeV : 0;
+            int fv  = (FullV     != PARAM_DISABLED) ? FullV     : 0;
 
             Set_recharge_voltage[7]  = (rcv >> 8) & 0xFF;
             Set_recharge_voltage[8]  =  rcv       & 0xFF;
@@ -411,6 +454,43 @@ void send_loop() {
 
             if (write(file, Set_recharge_voltage, sizeof(Set_recharge_voltage)) == -1) {
                 std::cerr << "Send error (Set_recharge_voltage)" << std::endl;
+            }
+        }
+
+        /********************************************************
+         * MowerOn  — [commands] mower_on != 65535
+         * 帧: 3B 4F 5D 6E 03 03 01 [checkSum]
+         ********************************************************/
+        if (mower_on != PARAM_DISABLED) {
+            unsigned int checkSum_mow = CalBufferSum(MowerOn_command, sizeof(MowerOn_command));
+            checkSum_mow &= 0xFF;
+            memcpy(MowerOn_command + 7, &checkSum_mow, 1);
+
+            printf("[MowerOn] ");
+            for (int i = 0; i < (int)sizeof(MowerOn_command); i++) printf("%02X ", MowerOn_command[i]);
+            printf("\n");
+
+            if (write(file, MowerOn_command, sizeof(MowerOn_command)) == -1) {
+                std::cerr << "Send error (MowerOn)" << std::endl;
+            }
+        }
+
+
+        /********************************************************
+         * MowerOff  — [commands] mower_off != 65535
+         * 帧: 3B 4F 5D 6E 03 03 00 [checkSum]
+         ********************************************************/
+        if (mower_off != PARAM_DISABLED) {
+            unsigned int checkSum_mow = CalBufferSum(MowerOff_command, sizeof(MowerOff_command));
+            checkSum_mow &= 0xFF;
+            memcpy(MowerOff_command + 7, &checkSum_mow, 1);
+
+            printf("[MowerOff] ");
+            for (int i = 0; i < (int)sizeof(MowerOff_command); i++) printf("%02X ", MowerOff_command[i]);
+            printf("\n");
+
+            if (write(file, MowerOff_command, sizeof(MowerOff_command)) == -1) {
+                std::cerr << "Send error (MowerOff)" << std::endl;
             }
         }
 
@@ -448,6 +528,61 @@ void send_loop() {
             }
         }
 
+
+        /********************************************************
+         * sleep_command  — [commands] sleep_command != 65535
+         *
+         * 帧结构（共 120 字节）：
+         *   [0-6]   帧头: 3B 4F 5D 6E 73 00 0F
+         *   [7-118] 28组 UTC 时间戳，每组 4 字节，低字节在前（little-endian）
+         *   [119]   checkSum（前119字节之和的低8位）
+         *
+         * 28组时间规律（UTC）：
+         *   起始日期: 2022-08-03，每天4个时间点，每半小时一个
+         *   第1天(2022-08-03): 05:00, 05:30, 06:00, 06:30
+         *   第2天(2022-08-04): 07:00, 07:30, 08:00, 08:30
+         *   第3天(2022-08-05): 09:00, 09:30, 10:00, 10:30
+         *   第4天(2022-08-06): 11:00, 11:30, 12:00, 12:30
+         *   第5天(2022-08-07): 13:00, 13:30, 14:00, 14:30
+         *   第6天(2022-08-08): 15:00, 15:30, 16:00, 16:30
+         *   第7天(2022-08-09): 17:00, 17:30, 18:00, 18:30
+         ********************************************************/
+        if (send_sleep_command != PARAM_DISABLED) {
+
+            // 从 config.ini [sleep_timestamps] 读取 28 组 UTC 时间戳（ts_00 ~ ts_27）
+            // 并填充到帧缓冲区 sleep_command[7..118]（little-endian，低字节在前）
+            static const char* ts_keys[28] = {
+                "ts_00","ts_01","ts_02","ts_03","ts_04","ts_05","ts_06","ts_07",
+                "ts_08","ts_09","ts_10","ts_11","ts_12","ts_13","ts_14","ts_15",
+                "ts_16","ts_17","ts_18","ts_19","ts_20","ts_21","ts_22","ts_23",
+                "ts_24","ts_25","ts_26","ts_27"
+            };
+            for (int n = 0; n < 28; n++) {
+                uint32_t timer = (uint32_t)g_cfg.getInt("sleep_timestamps", ts_keys[n], 0);
+                int base = 7 + n * 4;
+                sleep_command[base]     = (uint8_t)( timer        & 0xFF);
+                sleep_command[base + 1] = (uint8_t)((timer >> 8)  & 0xFF);
+                sleep_command[base + 2] = (uint8_t)((timer >> 16) & 0xFF);
+                sleep_command[base + 3] = (uint8_t)((timer >> 24) & 0xFF);
+            }
+
+            // 计算 checkSum：前119字节之和的低8位
+            checkSum = CalBufferSum(sleep_command, sizeof(sleep_command));
+            checkSum &= 0xFF;
+            sleep_command[119] = (uint8_t)checkSum;
+
+            // 打印发送内容（调试用）
+            printf("[sleep_command] ");
+            for (int i = 0; i < (int)sizeof(sleep_command); i++) {
+                printf("%02X ", sleep_command[i]);
+            }
+            printf("\n");
+
+            if (write(file, sleep_command, sizeof(sleep_command)) == -1) {
+                std::cerr << "Send error (sleep_command)" << std::endl;
+            }
+          
+        }
 
         //==================END==============
         usleep(sendInterval);   // 由 config.ini [system] send_interval_us 控制
@@ -635,6 +770,7 @@ int main() {
 // sudo systemctl disable xiaoyu.service 
 
 // scp -r /home/linaro/TestCommunication/TEST_COMMUNICATION linaro@10.31.244.6:/home/linaro/TestCommunication/
+// scp -r /home/linaro/TestCommunication linaro@10.31.244.11:/home/linaro/
 
 // git add *
 // git commit -m
