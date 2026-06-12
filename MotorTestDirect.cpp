@@ -12,7 +12,7 @@
 
 
 // Third Motor
-#define Moter_BenMo        //use for BenMo moter communication process
+// #define Moter_BenMo        //use for BenMo moter communication process
 
 #ifdef Moter_BenMo
 #define WHEEL_DIAMETER_MM 150.0f   //150mm
@@ -108,8 +108,8 @@ unsigned char Read_EEPROM[] =
 
 
 
-float g_leftVelocity = 0.0f;
-float g_rightVelocity = 0.0f;
+int g_leftVelocity = 0;
+int g_rightVelocity = 0;
 
 void signalHandler(int signum) {
     std::cout << "\n[Signal] Ctrl+C detected, stopping..." << std::endl;
@@ -145,6 +145,7 @@ void signalHandler(int signum) {
 //     //from claude
 void SerialPort_1_Init(const char *devicePath) {
     file = open(devicePath, O_RDWR | O_NOCTTY | O_NDELAY);
+    printf("open() returned fd = %d\n", file);  // ← 加这行
     if (file == -1) {
         perror("Failed to open serial port");
         exit(1);
@@ -191,16 +192,20 @@ void send_loop() {
          * motor command
          ********************************************************/
 
-#ifdef Moter_BenMo
-        // int convert maybe cause 0.8cm error
-        leftVelocity_ = static_cast<int>(
-            (g_leftVelocity * 1000.0f * 60.0f) /
-            (WHEEL_DIAMETER_MM * PI));
 
-        rightVelocity_ = static_cast<int>(
-            (g_rightVelocity * 1000.0f * 60.0f) /
-            (WHEEL_DIAMETER_MM * PI));
-#endif
+       leftVelocity_ = g_leftVelocity;
+       rightVelocity_ = g_rightVelocity;
+
+// #ifdef Moter_BenMo
+//         // int convert maybe cause 0.8cm error
+//         leftVelocity_ = static_cast<int>(
+//             (g_leftVelocity * 1000.0f * 60.0f) /
+//             (WHEEL_DIAMETER_MM * PI));
+
+//         rightVelocity_ = static_cast<int>(
+//             (g_rightVelocity * 1000.0f * 60.0f) /
+//             (WHEEL_DIAMETER_MM * PI));
+// #endif
 
         memcpy(motor_buffer + 7, &leftVelocity_, 2);
         memcpy(motor_buffer + 9, &rightVelocity_, 2);
@@ -209,9 +214,12 @@ void send_loop() {
         checkSum &= 0xFF;
         memcpy(motor_buffer + 13, &checkSum, 1);
 
-        if (write(file, motor_buffer, sizeof(motor_buffer)) == -1) {
-            std::cerr << "Send error (motor_buffer)" << std::endl;
-        }
+        // if (write(file, motor_buffer, sizeof(motor_buffer)) == -1) {
+        //     std::cerr << "Send error (motor_buffer)" << std::endl;
+        // }
+
+        ssize_t ret = write(file, motor_buffer, sizeof(motor_buffer));
+        printf("write fd=%d ret=%zd errno=%d %s\n", file, ret, errno, strerror(errno));
 
         std::cout << "leftVelocity_: " << leftVelocity_
                   << ", rightVelocity_: " << rightVelocity_
@@ -356,6 +364,7 @@ void receive_loop() {
 
     while (running) {
         int bytesRead = read(file, responseBuffer, sizeof(responseBuffer));
+        printf("read ret=%d\n", bytesRead);  // ← 加这行
 
         if (bytesRead < 0) continue;
 
@@ -413,16 +422,19 @@ void receive_loop() {
                             int32_t right_rpm_raw =
                                 (int32_t)buffer[6] | ((int32_t)buffer[7] << 8) |
                                 ((int32_t)buffer[8] << 16) | ((int32_t)buffer[9] << 24);
+                            
+                            std::cout << "Left RPM: " << left_rpm_raw << "  ";
+                            std::cout << "Right RPM: " << right_rpm_raw << " \n";
 
-#ifdef Moter_BenMo
-                            float left_rpm = left_rpm_raw / 10.0f; 
-                            float right_rpm = right_rpm_raw / 10.0f;
-                            float left_speed_mps = (left_rpm * PI * WHEEL_DIAMETER_MM / 1000.0f) / 60.0f;
-                            float right_speed_mps = (right_rpm * PI * WHEEL_DIAMETER_MM / 1000.0f) / 60.0f;
-#endif                                
-                            std::cout << "Left Wheel: " << left_rpm << " RPM, " << left_speed_mps << " m/s | ";
-                            std::cout << "Right Wheel: " << right_rpm << " RPM, " << right_speed_mps << " m/s\n";
-
+// #ifdef Moter_BenMo
+//                             float left_rpm = left_rpm_raw / 10.0f; 
+//                             float right_rpm = right_rpm_raw / 10.0f;
+//                             float left_speed_mps = (left_rpm * PI * WHEEL_DIAMETER_MM / 1000.0f) / 60.0f;
+//                             float right_speed_mps = (right_rpm * PI * WHEEL_DIAMETER_MM / 1000.0f) / 60.0f;
+                               
+                            // std::cout << "Left Wheel: " << left_rpm << " RPM, " << left_speed_mps << " m/s | ";
+                            // std::cout << "Right Wheel: " << right_rpm << " RPM, " << right_speed_mps << " m/s\n";
+// #endif 
                             uint32_t raw_bits =
                                 (uint32_t)buffer[27] | ((uint32_t)buffer[28] << 8) |
                                 ((uint32_t)buffer[29] << 16) | ((uint32_t)buffer[30] << 24);
@@ -493,8 +505,8 @@ int main(int argc, char *argv[]) {
     // const std::string motorPath = "/dev/ttyS3"; // for KickPi
 
     if (argc < 4) {
-        std::cerr << "Usage: " << argv[0] << " <serial_port> <left_velocity(m/s)> <right_velocity>(m/s)\n";
-        std::cerr << "Example: " << argv[0] << " /dev/ttyS6 0.3 0.3\n";
+        std::cerr << "Usage: " << argv[0] << " <serial_port> <left_RPM> <right_RPM>\n";
+        std::cerr << "Example: " << argv[0] << "./TEST_COMMUNICATION /dev/ttyS3 2000 2000\n";
         return 1;
     }
 
@@ -505,8 +517,8 @@ int main(int argc, char *argv[]) {
     SerialPort_1_Init(motorPath.c_str());
 
     // 获取速度参数（m/s）
-    g_leftVelocity = atof(argv[2]);
-    g_rightVelocity = atof(argv[3]);
+    g_leftVelocity = atoi(argv[2]);
+    g_rightVelocity = atoi(argv[3]);
 
     std::cout << "Motor control started. Press Ctrl+C to stop.\n";
 
@@ -527,3 +539,10 @@ int main(int argc, char *argv[]) {
 
 // 时间同步
 // sudo systemctl restart systemd-timesyncd
+// sudo systemctl stop systemd-timesyncd
+// sudo systemctl start systemd-timesyncd
+
+// sudo systemctl stop xiaoyu.service 
+// sudo systemctl disable xiaoyu.service 
+
+// scp -r /home/linaro/TestCommunication/TEST_COMMUNICATION linaro@10.31.244.6:/home/linaro/TestCommunication/
