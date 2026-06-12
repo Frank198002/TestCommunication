@@ -47,34 +47,30 @@ sudo systemctl stop xiaoyu
 
 # 如何修改代码变成 自己要发送的上下位机命令（仅仅码农需要）：
 1. 设置上下位机通信要输入的消息内容如下：
-参考 https://docs.qq.com/sheet/DQkV3TENIdmNHdk9X
+‘’‘
 unsigned char motor_buffer[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00};	//Speed=0 from smart to stm32 speed
 unsigned char cmd_alarm_off[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x07, 0x00, 0x04, 0x01, 0x00, 0x00, 0x00, 0x61};	//alarm_off command from smart to stm32  
 unsigned char cut_height_query[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x07, 0x00, 0x08, 0x64};	//cut_height_query command from smart to stm32  
-
+‘’‘
 增加程序中发送的对应的buffer如上面，修改对应发送的长度。
 
 
+2. 修改 Makefile，按顺序往下添加。
 
-1. 修改 Makefile，按顺序往下添加。
-
-#-------------------------------MAKE TARGETS-------------------------------
-TEST_YAW_CUT: YawCutTest.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $^ $(LIB_PATH)	
-TEST_MOTOR_Direct: MotorTestDirect.cpp
+TEST_COMMUNICATION: MotorTestDirect.cpp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $^ $(LIB_PATH)
 
-修改之后进行编译，举例：TEST_MOTOR_Direct
+修改之后进行编译
 ‘’‘
-make TEST_MOTOR_Direct 
-’‘’
+make TEST_COMMUNICATION 
+‘’‘
 生成的TEST_MOTOR_Direct 就是最终生成的可执行文件
 
 
-2. 编译 
+3. 编译 
 make TEST_COMMUNICATION
 
 
-3. 如何检查是否已经正确往串口发送数据
+4. 如何检查是否已经正确往串口发送数据
 timeout 5 strace -f ./TEST_COMMUNICATION /dev/ttyS6 2000 2000>/tmp/strace3.txt
 grep "write(3" /tmp/strace3.txt
