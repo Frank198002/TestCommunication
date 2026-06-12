@@ -116,32 +116,6 @@ void signalHandler(int signum) {
     running = false;
 }
 
-// void SerialPort_1_Init(const char *devicePath) {
-//     file = open(devicePath, O_RDWR | O_NOCTTY | O_NDELAY);
-//     if (file == -1) {
-//         perror("Failed to open serial port");
-//         exit(1);
-//     }
-
-//     fcntl(file, F_SETFL, 0);  // 阻塞模式
-
-//     struct termios options;
-//     tcgetattr(file, &options);
-
-//     cfsetispeed(&options, B115200);
-//     cfsetospeed(&options, B115200);
-
-//     options.c_cflag |= (CLOCAL | CREAD);
-//     options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
-//     options.c_iflag &= ~(IXON | IXOFF | IXANY);
-//     options.c_oflag &= ~OPOST;
-
-//     options.c_cc[VMIN] = 0;
-//     options.c_cc[VTIME] = 1;  // 100ms
-
-//     tcsetattr(file, TCSANOW, &options);
-// }
-
 //     //from claude
 void SerialPort_1_Init(const char *devicePath) {
     file = open(devicePath, O_RDWR | O_NOCTTY | O_NDELAY);
@@ -193,8 +167,8 @@ void send_loop() {
          ********************************************************/
 
 
-       leftVelocity_ = g_leftVelocity;
-       rightVelocity_ = g_rightVelocity;
+        leftVelocity_ = g_leftVelocity;
+        rightVelocity_ = g_rightVelocity;
 
 // #ifdef Moter_BenMo
 //         // int convert maybe cause 0.8cm error
@@ -207,6 +181,8 @@ void send_loop() {
 //             (WHEEL_DIAMETER_MM * PI));
 // #endif
 
+
+
         memcpy(motor_buffer + 7, &leftVelocity_, 2);
         memcpy(motor_buffer + 9, &rightVelocity_, 2);
 
@@ -217,6 +193,12 @@ void send_loop() {
         // if (write(file, motor_buffer, sizeof(motor_buffer)) == -1) {
         //     std::cerr << "Send error (motor_buffer)" << std::endl;
         // }
+
+        // printf("[SEND HEX]: ");
+        // for (size_t k = 0; k < sizeof(motor_buffer); k++) {
+        //     printf("%02X ", motor_buffer[k]);
+        // }
+        // printf("\n");
 
         ssize_t ret = write(file, motor_buffer, sizeof(motor_buffer));
         printf("write fd=%d ret=%zd errno=%d %s\n", file, ret, errno, strerror(errno));
@@ -229,71 +211,68 @@ void send_loop() {
         /********************************************************
          * pin code query
          ********************************************************/
-        checkSum = CalBufferSum(pin_code_query, sizeof(pin_code_query));
-        checkSum &= 0xFF;
-        memcpy(pin_code_query + 11, &checkSum, 1);
+        // checkSum = CalBufferSum(pin_code_query, sizeof(pin_code_query));
+        // checkSum &= 0xFF;
+        // memcpy(pin_code_query + 11, &checkSum, 1);
 
-        if (write(file, pin_code_query, sizeof(pin_code_query)) == -1) {
-            std::cerr << "Send error (pin_code_query)" << std::endl;
-        }
+        // if (write(file, pin_code_query, sizeof(pin_code_query)) == -1) {
+        //     std::cerr << "Send error (pin_code_query)" << std::endl;
+        // }
 
 
         /********************************************************
          * Set THreshold（RAIN，Tilt，Collision）
          ********************************************************/
 
-        uint16_t RainTHHigh   = 3000;
-        uint16_t TiltAngTH    = 30;
-        uint16_t CollisionCoef = 10;
+        // uint16_t RainTHHigh   = 3000;
+        // uint16_t TiltAngTH    = 30;
+        // uint16_t CollisionCoef = 10;
 
-        Set_THreshold[7]  = (RainTHHigh >> 8) & 0xFF;
-        Set_THreshold[8]  = RainTHHigh & 0xFF;
+        // Set_THreshold[7]  = (RainTHHigh >> 8) & 0xFF;
+        // Set_THreshold[8]  = RainTHHigh & 0xFF;
 
-        Set_THreshold[9]  = (TiltAngTH >> 8) & 0xFF;
-        Set_THreshold[10] = TiltAngTH & 0xFF;
+        // Set_THreshold[9]  = (TiltAngTH >> 8) & 0xFF;
+        // Set_THreshold[10] = TiltAngTH & 0xFF;
 
-        Set_THreshold[11] = (CollisionCoef >> 8) & 0xFF;
-        Set_THreshold[12] = CollisionCoef & 0xFF;
+        // Set_THreshold[11] = (CollisionCoef >> 8) & 0xFF;
+        // Set_THreshold[12] = CollisionCoef & 0xFF;
 
-        checkSum = CalBufferSum(Set_THreshold,sizeof(Set_THreshold));
+        // checkSum = CalBufferSum(Set_THreshold,sizeof(Set_THreshold));
 
-        checkSum &= 0xFF;
+        // checkSum &= 0xFF;
 
-        Set_THreshold[13] = checkSum;
+        // Set_THreshold[13] = checkSum;
 
-        if (write(file, Set_THreshold, sizeof(Set_THreshold)) == -1)
-        {
-            std::cerr << "Send error (Set_THreshold)" << std::endl;
-        }
+        // if (write(file, Set_THreshold, sizeof(Set_THreshold)) == -1)
+        // {
+        //     std::cerr << "Send error (Set_THreshold)" << std::endl;
+        // }
 
 
         /********************************************************
          * Set recharge voltage
          ********************************************************/
+        // uint16_t ReChargeV = 150; //yuhui_test
+        // uint16_t FullV     = 202; //yuhui_test
 
-        // uint16_t ReChargeV = 165; //yuhui
-        // uint16_t FullV     = 195; //yuhui
-        uint16_t ReChargeV = 150; //yuhui_test
-        uint16_t FullV     = 202; //yuhui_test
+        // Set_recharge_voltage[7] = (ReChargeV >> 8) & 0xFF;
+        // Set_recharge_voltage[8] = ReChargeV & 0xFF;
 
-        Set_recharge_voltage[7] = (ReChargeV >> 8) & 0xFF;
-        Set_recharge_voltage[8] = ReChargeV & 0xFF;
+        // Set_recharge_voltage[9]  = (FullV >> 8) & 0xFF;
+        // Set_recharge_voltage[10] = FullV & 0xFF;
 
-        Set_recharge_voltage[9]  = (FullV >> 8) & 0xFF;
-        Set_recharge_voltage[10] = FullV & 0xFF;
+        // checkSum = CalBufferSum(Set_recharge_voltage,sizeof(Set_recharge_voltage));
 
-        checkSum = CalBufferSum(Set_recharge_voltage,sizeof(Set_recharge_voltage));
+        // checkSum &= 0xFF;
 
-        checkSum &= 0xFF;
+        // Set_recharge_voltage[11] = checkSum;
 
-        Set_recharge_voltage[11] = checkSum;
-
-        if (write(file,
-                  Set_recharge_voltage,
-                  sizeof(Set_recharge_voltage)) == -1)
-        {
-            std::cerr << "Send error (Set_recharge_voltage)" << std::endl;
-        }
+        // if (write(file,
+        //           Set_recharge_voltage,
+        //           sizeof(Set_recharge_voltage)) == -1)
+        // {
+        //     std::cerr << "Send error (Set_recharge_voltage)" << std::endl;
+        // }
 
 
         /********************************************************
@@ -536,6 +515,7 @@ int main(int argc, char *argv[]) {
 }
 
 
+// ./TEST_COMMUNICATION /dev/ttyS3 3000 3000
 
 // 时间同步
 // sudo systemctl restart systemd-timesyncd
@@ -546,3 +526,12 @@ int main(int argc, char *argv[]) {
 // sudo systemctl disable xiaoyu.service 
 
 // scp -r /home/linaro/TestCommunication/TEST_COMMUNICATION linaro@10.31.244.6:/home/linaro/TestCommunication/
+
+// git add *
+// git commit -m
+// git push
+
+// Fist use
+// git  clone ****
+
+
