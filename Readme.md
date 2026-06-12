@@ -57,8 +57,10 @@ unsigned char cut_height_query[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x07, 0x00, 0x08, 0x
 
 2. 修改 Makefile，按顺序往下添加。
 
+‘’‘
 TEST_COMMUNICATION: MotorTestDirect.cpp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $^ $(LIB_PATH)
+‘’‘
 
 修改之后进行编译
 ‘’‘
