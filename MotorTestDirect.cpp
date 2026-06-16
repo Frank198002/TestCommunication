@@ -196,6 +196,25 @@ unsigned char Read_EEPROM[] =
 unsigned char MowerOn_command[]  = {0x3b, 0x4f, 0x5d, 0x6e, 0x03, 0x03, 0x01, 0x00};  // [7]=checkSum
 unsigned char MowerOff_command[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x03, 0x03, 0x00, 0x00};  // [7]=checkSum
 
+
+
+// GetRTC 命令帧（共15字节）：
+// [0-5]  固定包头，[6-13] 全0占位，[14] checkSum
+unsigned char getrtc_command[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x0a, 0x01,
+                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // [6-13] 占位
+                                   0x00};                                             // [14] checkSum
+
+// SetRTC 命令帧（共15字节）：
+// [0-5]  固定包头
+// [6]    hour, [7] min, [8] second, [9] day, [10] month, [11] weekday, [12] year(年份-2000)
+// [13]   0x00 预留
+// [14]   checkSum
+unsigned char setrtc_command[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x06, 0x06,
+                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // [6-12] 运行时填入
+                                   0x00,                                       // [13] 预留
+                                   0x00};                                      // [14] checkSum
+
+
 // sleep_command 帧格式（共 120 字节）：
 // [0-6]  : 固定帧头  3B 4F 5D 6E 73 00 0F
 // [7-118]: 28组 UTC 时间戳，每组4字节，小端序（低字节在前）
@@ -293,8 +312,8 @@ void send_loop() {
     int rightVelocity_ = 0;
 
     // [system] 系统参数：启动时读一次，运行期间不变
-    // const int sendInterval = g_cfg.getInt("system", "send_interval_us", 500000);
-    // printf("[INFO] send_interval_us = %d us\n", sendInterval);
+    const int sendInterval = g_cfg.getInt("system", "send_interval_us", 500000);
+    printf("[INFO] send_interval_us = %d us\n", sendInterval);
 
     while (running) {
 
@@ -305,7 +324,7 @@ void send_loop() {
         // -------------------------------------------------------
         g_cfg.load("config.ini");
 
-        const int sendInterval = g_cfg.getInt("system", "send_interval_us", 500000);  // 每周期实时生效
+        // const int sendInterval = g_cfg.getInt("system", "send_interval_us", 500000);  // 每周期实时生效
 
         // [motor]
         g_leftVelocity  = g_cfg.getInt("motor", "left_velocity",  0);
@@ -513,6 +532,72 @@ void send_loop() {
                 std::cerr << "Send error (set_Control_Board_HD_version)" << std::endl;
             }
         }
+
+
+        /********************************************************
+         * GetRTC  — [commands] get_rtc != 65535
+         * 帧: 3B 4F 5D 6E 0A 01 00 00 00 00 00 00 00 00 [checkSum]  共15字节
+         ********************************************************/
+        const int get_rtc = g_cfg.getInt("commands", "get_rtc", PARAM_DISABLED);
+        if (get_rtc != PARAM_DISABLED) {
+            unsigned int checkSum_grtc = CalBufferSum(getrtc_command, sizeof(getrtc_command));
+            checkSum_grtc &= 0xFF;
+            memcpy(getrtc_command + 14, &checkSum_grtc, 1);
+
+            printf("[GetRTC] ");
+            for (int i = 0; i < (int)sizeof(getrtc_command); i++) printf("%02X ", getrtc_command[i]);
+            printf("\n");
+
+            if (write(file, getrtc_command, sizeof(getrtc_command)) == -1) {
+                std::cerr << "Send error (GetRTC)" << std::endl;
+            }
+        }
+
+
+        /********************************************************
+         * SetRTC  — [commands] set_rtc != 65535
+         * 帧: 3B 4F 5D 6E 06 06 [hour][min][sec][day][month][weekday][year] 00 [checkSum]  共15字节
+         * 时间取当前系统本地时间，year = 当前年份 - 2000
+         ********************************************************/
+        const int set_rtc = g_cfg.getInt("commands", "set_rtc", PARAM_DISABLED);
+        if (set_rtc != PARAM_DISABLED) {
+            time_t now = time(nullptr);
+            struct tm *lt = localtime(&now);
+
+            unsigned char hour    = (unsigned char)lt->tm_hour;
+            unsigned char min     = (unsigned char)lt->tm_min;
+            unsigned char second  = (unsigned char)lt->tm_sec;
+            unsigned char day     = (unsigned char)lt->tm_mday;
+            unsigned char month   = (unsigned char)(lt->tm_mon + 1);   // tm_mon: 0-11
+            unsigned char weekday = (unsigned char)lt->tm_wday;        // 0=Sunday
+            unsigned char year    = (unsigned char)(lt->tm_year + 1900 - 2000); // 年份-2000
+
+            memcpy(setrtc_command + 6,  &hour,    1);
+            memcpy(setrtc_command + 7,  &min,     1);
+            memcpy(setrtc_command + 8,  &second,  1);
+            memcpy(setrtc_command + 9,  &day,     1);
+            memcpy(setrtc_command + 10, &month,   1);
+            memcpy(setrtc_command + 11, &weekday, 1);
+            memcpy(setrtc_command + 12, &year,    1);
+            // [13] 保持 0x00 预留
+
+            unsigned int checkSum_srtc = CalBufferSum(setrtc_command, sizeof(setrtc_command));
+            checkSum_srtc &= 0xFF;
+            memcpy(setrtc_command + 14, &checkSum_srtc, 1);
+
+            printf("[SetRTC] %04d-%02d-%02d %02d:%02d:%02d weekday=%d year_field=%d\n",
+                   lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+                   lt->tm_hour, lt->tm_min, lt->tm_sec,
+                   lt->tm_wday, year);
+            printf("[SetRTC] ");
+            for (int i = 0; i < (int)sizeof(setrtc_command); i++) printf("%02X ", setrtc_command[i]);
+            printf("\n");
+
+            if (write(file, setrtc_command, sizeof(setrtc_command)) == -1) {
+                std::cerr << "Send error (SetRTC)" << std::endl;
+            }
+        }
+
 
 
         /********************************************************
