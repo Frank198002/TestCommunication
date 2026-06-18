@@ -209,7 +209,7 @@ unsigned char getrtc_command[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x0a, 0x01,
 // [6]    hour, [7] min, [8] second, [9] day, [10] month, [11] weekday, [12] year(年份-2000)
 // [13]   0x00 预留
 // [14]   checkSum
-unsigned char setrtc_command[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x06, 0x06,
+unsigned char setrtc_command[] = {0x3b, 0x4f, 0x5d, 0x6e, 0x0a, 0x06,
                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // [6-12] 运行时填入
                                    0x00,                                       // [13] 预留
                                    0x00};                                      // [14] checkSum
